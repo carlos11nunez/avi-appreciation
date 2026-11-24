@@ -1,0 +1,491 @@
+// Eye animations from cardo-cai-Starboy (index.html preview), adapted for the page: no shake button or battery slider.
+// makeEyes(canvas, 'CAT') starts one independent pair; they follow the pointer anywhere and tapping the background changes their style.
+// Returns { lookAt(x, y) with x, y in -1..1, setStyle(name) } so the page can steer them.
+function makeEyes(cv, startName) {
+// Mirrors starboy.ino - keep them in sync.
+const W = 466, g = cv.getContext('2d');
+const CAT=0, WIDE=1, SHOCKED=2, ROUND=3, STARP=4, DOME=5, SLAB=6, GOOGLY=7, FIRE=8, SPIRAL=9, HEART=10, SLEEPY=11, LOWBAT=12;
+const NAMES = ['CAT','WIDE','SHOCKED','ROUND','STARP','DOME','SLAB','GOOGLY','FIRE','SPIRAL','HEART','SLEEPY','LOWBAT'];
+const TAP_CYCLE = [CAT, WIDE, SHOCKED, ROUND, STARP, DOME, SLAB, GOOGLY, FIRE]; // no heart or spiral eyes on this page
+const LEFT_EYE = [152, 255, 152], RIGHT_EYE = [0x17, 0x39, 0xD1]; // mint, #1739d1
+const BLUE_EYE = [0x17, 0x39, 0xD1], ORANGE_EYE = [0xFF, 0x9A, 0x1F], CREAM = [255, 231, 176], SWEAT = [80, 220, 190]; // dome/slab/googly
+// colors from the custom drawing: orange flame on the left, blue on the right (body, core outline, core, pupil)
+const FIRE_L_OUT = [0xFF, 0x61, 0x00], FIRE_L_CORE = [0xFF, 0xB8, 0x44], FIRE_L_PUPIL = [0xFF, 0xE2, 0xB8]; // colors from flame_emblem.svg
+const FIRE_R_OUT = [0x2B, 0x37, 0xFF], FIRE_R_CORE = [0x89, 0x94, 0xFE], FIRE_R_PUPIL = [0xA7, 0xBD, 0xF9], FLARE_MS = 2500; // shake flare length
+let flareUntil = 0, flare = 0;
+const LOVE_MS = 1800; let loveUntil = 0, loveStart = 0, love = 0, beatPh = 0, dropPh = 0; // heart mode shaken: love-struck (0..1); heartbeat + drip phases
+const HYPNO_MS = 4500; let hypnoUntil = 0, hypno = 0; // spiral mode shaken: swells huge and hovers over you, spinning (0..1)
+// spiral mode: little twinkling stars around the face [x, y, size]; the eyes keep getting distracted by them
+const SPIRAL_STARS = [[233, 86, 22], [233, 354, 16], [84, 380, 18], [384, 378, 16]];
+// spiral eyes: everything from spirals.svg (SPIRAL_L); shaken, the eyes swell and the main spiral spins (hypnosis),
+// clipped to a circle that reaches the tip stripes
+// Shapes per eye: [kind, n, x0, y0, ...] ending with -1. kind 0 white, 1 red, 2 dark; +10 = main spiral. SVG units, origin = star center.
+const SPIRAL_SPIN = 10, SPIRAL_GROW = 0.55; // peak spin (rad/s) and size boost while hypnotizing
+let spinPh = 0, lastSpin = 0;
+const SPIRAL_L_HDR = [-6, -16, 732, 372];
+const SPIRAL_L = [0, 110, -213, -732, -202, -726, -169, -672, -125, -609, -83, -565, 25, -473, 115, -407, 106, -406, 27, -420, -15, -424, -83, -422, -135, -412, -207, -390, -267, -360, -295, -340, -296, -328, -288, -318, -279, -315, -273, -317, -194, -362, -122, -382, -71, -390, 2, -392, 68, -386, 115, -377, 122, -382, 127, -398, 249, -323, 337, -277, 452, -227, 549, -192, 556, -185, 554, -171, 507, -124, 463, -74, 391, 23, 329, 129, 285, 228, 253, 322, 225, 438, 207, 563, 198, 708, 195, 728, 189, 732, 178, 732, 169, 729, 132, 677, 166, 671, 191, 661, 196, 654, 194, 640, 183, 636, 139, 646, 132, 649, 121, 662, 62, 582, 133, 571, 184, 555, 192, 551, 194, 546, 190, 527, 177, 522, 113, 541, 64, 546, 59, 554, 56, 574, 42, 556, 10, 524, -125, 402, -65, 405, -5, 403, 84, 385, 160, 361, 227, 329, 239, 318, 239, 305, 235, 299, 225, 300, 165, 329, 83, 355, 10, 369, -124, 371, -133, 375, -140, 392, -245, 312, -355, 242, -443, 198, -487, 180, -551, 159, -556, 154, -555, 138, -508, 74, -504, 80, -491, 128, -471, 174, -464, 180, -455, 180, -443, 174, -438, 168, -463, 113, -475, 68, -494, 53, -438, -39, -388, -136, -352, -216, -326, -282, -278, -437, -248, -569, -225, -718, -220, -730, 11, 341, -50, -366, 38, -360, 97, -344, 136, -330, 188, -306, 227, -282, 240, -270, 272, -215, 288, -176, 298, -138, 298, -42, 290, 3, 262, 79, 230, 134, 210, 159, 176, 193, 139, 223, 109, 241, 42, 265, -8, 272, -101, 269, -133, 263, -169, 249, -225, 209, -269, 158, -303, 96, -319, 42, -320, -73, -319, -93, -313, -121, -303, -150, -291, -174, -267, -208, -251, -224, -197, -262, -139, -282, -66, -296, 19, -296, 95, -280, 121, -270, 151, -254, 194, -216, 220, -168, 228, -128, 228, -8, 222, 17, 200, 66, 150, 123, 98, 171, 67, 195, 27, 209, -10, 215, -48, 217, -79, 215, -122, 207, -171, 185, -183, 177, -213, 145, -237, 109, -267, 39, -273, 16, -275, -8, -269, -72, -257, -107, -241, -135, -209, -177, -178, -204, -132, -226, -85, -238, 16, -238, 53, -230, 81, -220, 110, -204, 132, -186, 148, -167, 168, -114, 174, -84, 174, -11, 164, 22, 146, 54, 128, 77, 98, 107, 71, 127, 39, 145, -8, 159, -61, 160, -105, 153, -130, 141, -153, 123, -167, 107, -187, 74, -201, 28, -202, -34, -197, -70, -169, -124, -141, -158, -111, -178, -73, -194, -30, -198, 31, -190, 65, -172, 92, -148, 110, -124, 120, -98, 120, -14, 104, 24, 84, 53, 53, 81, 25, 97, -9, 104, -62, 103, -105, 79, -121, 59, -137, 24, -141, -10, -139, -47, -133, -74, -121, -96, -99, -118, -77, -132, -49, -138, -8, -137, 13, -134, 33, -124, 52, -108, 66, -90, 70, -81, 72, -52, 70, -28, 62, -6, 48, 15, 29, 31, -3, 40, -41, 37, -71, 15, -81, -2, -84, -16, -83, -63, -73, -80, -52, -94, -16, -94, -5, -88, 4, -76, 4, -43, -5, -31, -20, -31, -30, -38, -29, -62, -40, -62, -47, -56, -51, -47, -51, -17, -43, -1, -28, 9, -4, 10, 4, 9, 12, 3, 36, -32, 40, -54, 38, -75, 34, -83, 15, -100, 4, -104, -18, -106, -51, -104, -66, -100, -95, -80, -103, -66, -108, -46, -108, -7, -103, 22, -95, 42, -77, 61, -61, 67, -38, 69, -8, 67, 13, 61, 35, 51, 58, 33, 72, 13, 88, -24, 88, -95, 78, -113, 62, -132, 29, -156, 1, -164, -36, -168, -75, -164, -98, -154, -133, -124, -165, -62, -170, -30, -169, 22, -163, 46, -137, 91, -107, 121, -95, 127, -53, 129, -15, 125, 38, 107, 62, 91, 96, 60, 124, 24, 134, 4, 141, -24, 140, -96, 130, -131, 106, -164, 78, -188, 27, -206, -33, -214, -80, -210, -133, -192, -171, -172, -195, -145, -223, -103, -239, -50, -242, 6, -227, 59, -213, 88, -183, 131, -163, 151, -133, 171, -92, 181, -37, 182, 34, 173, 71, 155, 96, 137, 132, 105, 170, 59, 188, 22, 198, -26, 202, -116, 194, -154, 170, -193, 150, -217, 124, -236, 95, -250, 58, -262, 23, -267, -71, -266, -138, -252, -175, -236, -200, -222, -241, -190, -251, -178, -275, -139, -281, -119, -289, -68, -289, 36, -271, 94, -241, 148, -223, 169, -195, 193, -159, 215, -127, 229, -97, 237, -3, 244, 54, 235, 98, 215, 138, 189, 157, 171, 180, 147, 216, 101, 238, 61, 254, 10, 268, -54, 268, -122, 260, -161, 244, -198, 220, -236, 194, -264, 121, -302, 15, -334, -48, -340, -104, -336, -145, -328, -215, -300, -255, -270, -281, -244, -295, -226, -315, -189, -345, -92, -349, -71, -352, -14, -351, 57, -339, 98, -289, 185, -261, 219, -224, 251, -171, 281, -133, 295, -78, 302, 4, 299, 83, 279, 121, 265, 201, 215, 238, 181, 286, 105, 312, 47, 330, -15, 338, -63, 338, -161, 314, -217, 286, -260, 287, -272, 297, -278, 309, -280, 316, -276, 338, -241, 350, -212, 368, -147, 372, -64, 368, -34, 356, 13, 340, 55, 300, 143, 286, 165, 252, 207, 216, 243, 167, 279, 95, 313, 6, 331, -79, 334, -101, 333, -182, 311, -238, 281, -272, 255, -295, 231, -337, 171, -375, 83, -383, 45, -384, -42, -379, -82, -363, -145, -335, -216, -315, -248, -277, -292, -232, -324, -174, -348, -113, -362, 12, 328, -42, -352, 16, -348, 121, -316, 165, -296, 214, -266, 221, -253, 238, -234, 258, -200, 274, -160, 282, -120, 282, -59, 260, 38, 246, 77, 230, 105, 182, 165, 143, 201, 107, 225, 60, 247, 14, 254, -85, 253, -138, 239, -173, 223, -196, 209, -241, 169, -265, 133, -281, 104, -291, 77, -301, 44, -304, 12, -301, -78, -285, -154, -253, -196, -208, -232, -171, -252, -136, -266, -77, -278, -18, -282, 49, -278, 109, -258, 156, -230, 182, -199, 204, -164, 212, -140, 216, -102, 214, -53, 210, -14, 202, 23, 184, 62, 146, 111, 105, 147, 76, 167, 41, 185, -29, 196, -86, 195, -129, 187, -146, 179, -171, 161, -195, 137, -227, 91, -251, 30, -254, 8, -254, -33, -243, -88, -225, -126, -191, -172, -164, -192, -88, -222, -49, -226, 15, -222, 52, -212, 93, -194, 110, -180, 130, -156, 146, -126, 154, -94, 155, -24, 152, -6, 136, 30, 106, 69, 52, 115, 24, 127, -23, 141, -53, 143, -94, 141, -115, 131, -153, 92, -177, 46, -184, 2, -183, -46, -171, -81, -149, -124, -138, -138, -104, -166, -92, -172, -61, -181, -21, -181, 10, -176, 47, -160, 80, -132, 100, -101, 104, -78, 102, -27, 84, 18, 70, 39, 49, 57, 24, 71, -9, 81, -46, 82, -69, 79, -91, 67, -105, 52, -115, 28, -121, 2, -122, -40, -119, -61, -107, -86, -86, -104, -67, -114, -27, -120, 12, -116, 34, -102, 46, -89, 54, -66, 50, -31, 24, 11, 1, 24, -28, 23, -53, 9, -63, -11, -63, -53, -56, -66, -45, -74, -31, -76, -18, -72, -14, -55, -20, -37, -26, -35, -30, -38, -28, -57, -31, -64, -40, -62, -49, -53, -53, -33, -51, -17, -45, -4, -33, 7, -13, 11, 4, 9, 22, -8, 38, -36, 38, -75, 32, -86, 20, -96, 10, -102, -9, -106, -60, -102, -77, -94, -92, -82, -103, -66, -108, -40, -108, -7, -103, 22, -95, 42, -77, 61, -68, 65, -23, 68, 8, 63, 35, 51, 56, 35, 70, 16, 88, -24, 88, -95, 64, -130, 47, -144, 24, -158, -8, -166, -53, -168, -87, -160, -125, -132, -137, -118, -157, -81, -169, -49, -170, 11, -163, 46, -143, 83, -104, 123, -95, 127, -41, 128, -15, 125, 23, 113, 49, 101, 96, 60, 126, 21, 140, -13, 142, -47, 140, -96, 134, -120, 126, -138, 94, -176, 74, -190, 17, -208, -56, -214, -95, -206, -166, -176, -179, -166, -211, -123, -229, -88, -239, -50, -242, -20, -241, 16, -221, 74, -187, 126, -160, 153, -129, 173, -71, 182, -16, 181, 40, 171, 94, 139, 140, 97, 172, 56, 188, 22, 194, 0, 202, -90, 201, -123, 196, -150, 170, -193, 145, -222, 121, -238, 95, -250, 39, -266, -71, -266, -131, -254, -193, -226, -241, -190, -271, -147, -281, -119, -289, -68, -290, -38, -287, 46, -267, 102, -243, 145, -227, 165, -175, 207, -113, 233, -86, 239, -11, 244, 44, 237, 59, 233, 98, 215, 140, 187, 180, 147, 220, 96, 234, 71, 248, 31, 264, -34, 269, -65, 270, -104, 260, -161, 244, -198, 224, -231, 197, -262, 126, -300, 32, -330, -38, -340, -104, -336, -136, -330, -159, -324, -211, -302, -255, -270, -281, -244, -295, -226, -315, -189, -345, -92, -349, -71, -352, -14, -351, 57, -339, 98, -289, 185, -261, 219, -224, 251, -171, 281, -133, 295, -78, 302, 4, 299, 83, 279, 121, 265, 201, 215, 238, 181, 286, 105, 312, 47, 330, -15, 338, -63, 338, -161, 314, -217, 287, -258, 287, -272, 298, -272, 326, -223, 350, -167, 354, -126, 352, -68, 342, -9, 326, 47, 300, 106, 254, 182, 222, 215, 169, 253, 121, 279, 95, 289, 1, 313, -39, 316, -85, 316, -140, 307, -192, 285, -232, 261, -253, 245, -295, 199, -331, 141, -357, 86, -366, 35, -365, -42, -357, -98, -327, -194, -305, -235, -263, -280, -221, -312, -164, -336, -112, -348, 1, 19, -40, -424, 27, -420, 112, -404, 124, -396, 121, -379, 111, -378, 32, -390, -71, -390, -140, -378, -194, -362, -277, -316, -288, -318, -296, -328, -295, -340, -288, -346, -239, -376, -202, -392, -152, -408, -107, -418, 1, 17, 232, 298, 238, 302, 240, 316, 238, 321, 227, 329, 155, 363, 69, 389, -5, 403, -51, 405, -113, 403, -133, 397, -136, 390, -133, 375, -124, 371, 10, 369, 83, 355, 165, 329, 1, 17, -44, -474, 18, -470, 22, -468, 24, -457, 22, -450, 17, -446, -46, -446, -84, -442, -135, -432, -193, -416, -262, -390, -276, -391, -282, -398, -282, -407, -275, -414, -185, -454, -114, -470, 1, 12, 205, 380, 218, 386, 220, 394, 218, 405, 135, 437, 83, 451, 11, 463, -35, 464, -47, 463, -48, 460, -47, 443, 83, 419, 1, 14, -439, -18, -427, -16, -419, 43, -409, 82, -381, 164, -360, 207, -363, 217, -374, 222, -387, 218, -405, 186, -441, 86, -450, 40, -451, 0, -449, -14, 1, 12, -75, -534, -54, -532, -52, -520, -54, -511, -64, -507, -165, -490, -234, -466, -247, -466, -255, -469, -255, -486, -230, -500, -128, -528, 1, 15, 386, -244, 396, -242, 400, -234, 414, -195, 428, -136, 432, -76, 429, -46, 425, -44, 417, -44, 409, -50, 398, -127, 384, -187, 373, -218, 374, -237, 377, -242, 1, 14, 198, 456, 204, 458, 208, 464, 208, 477, 203, 483, 172, 497, 118, 515, 79, 523, 38, 525, 13, 521, 12, 509, 17, 499, 120, 483, 167, 469, 2, 19, -29, -404, 39, -402, 88, -396, 119, -388, 122, -382, 115, -377, 32, -390, -29, -392, -86, -388, -149, -376, -194, -362, -273, -317, -279, -315, -285, -320, -283, -326, -272, -334, -193, -376, -119, -396, -72, -403, 1, 11, -117, -576, -98, -572, -95, -555, -102, -547, -187, -530, -233, -516, -242, -517, -249, -524, -249, -540, -226, -552, -182, -566, 2, 16, 232, 298, 238, 301, 235, 308, 200, 329, 111, 361, 62, 373, 3, 383, -47, 385, -112, 383, -123, 381, -130, 376, -128, 372, -120, 371, 10, 369, 74, 357, 165, 329, 1, 12, 181, 522, 190, 527, 194, 540, 192, 551, 184, 555, 142, 569, 99, 577, 72, 578, 59, 572, 58, 558, 64, 546, 113, 541, 2, 14, -29, -458, 17, -454, 16, -448, 12, -446, -56, -445, -97, -440, -206, -412, -259, -390, -266, -390, -270, -394, -264, -402, -228, -418, -149, -442, -72, -457, 1, 12, -492, 60, -482, 62, -475, 68, -463, 113, -438, 166, -440, 171, -453, 180, -464, 180, -471, 174, -491, 128, -503, 77, -501, 62, 1, 12, 449, -220, 460, -215, 478, -156, 484, -108, 482, -102, 473, -98, 463, -99, 455, -107, 442, -168, 432, -200, 434, -210, 443, -219, 2, 9, 205, 380, 212, 385, 209, 391, 110, 425, -10, 448, -32, 449, -41, 444, -20, 436, 91, 417, 2, 16, -430, -16, -427, -16, -424, -2, -419, 43, -411, 76, -383, 159, -362, 202, -360, 211, -362, 216, -367, 216, -373, 211, -387, 183, -419, 94, -433, 38, -434, -6, -433, -16, 2, 10, -71, -518, -54, -515, -55, -510, -64, -507, -165, -490, -234, -466, -249, -470, -242, -476, -171, -502, -113, -514, 2, 11, 375, -236, 378, -237, 382, -234, 400, -179, 416, -100, 418, -64, 416, -48, 409, -50, 398, -127, 384, -187, 371, -227, 1, 11, -161, -612, -150, -611, -141, -606, -142, -592, -194, -582, -224, -573, -230, -575, -236, -582, -235, -594, -225, -600, -197, -608, 1, 8, 175, 588, 186, 592, 188, 597, 186, 608, 181, 613, 135, 627, 101, 627, 101, 606, 2, 10, 198, 456, 204, 461, 199, 469, 167, 483, 125, 495, 61, 504, 33, 503, 25, 500, 120, 483, 167, 469, 1, 9, -181, -652, -162, -650, -160, -635, -166, -629, -219, -616, -227, -618, -231, -631, -228, -642, -205, -650, 1, 10, 186, 636, 192, 638, 196, 645, 195, 656, 191, 661, 153, 674, 136, 674, 127, 670, 126, 659, 132, 649, 2, 12, -105, -558, -98, -554, -97, -551, -109, -545, -187, -530, -233, -516, -241, -516, -244, -520, -244, -523, -237, -528, -206, -538, -167, -548, 2, 8, 181, 522, 188, 527, 184, 533, 118, 553, 85, 557, 62, 552, 64, 546, 113, 541, 1, 10, 505, -198, 514, -196, 518, -190, 524, -163, 522, -147, 507, -141, 502, -142, 499, -146, 489, -181, 491, -190, 2, 10, -481, 62, -475, 68, -459, 124, -438, 166, -441, 170, -447, 171, -453, 166, -475, 118, -486, 78, -486, 65, 1, 9, -526, 114, -514, 118, -510, 123, -496, 161, -521, 164, -531, 157, -536, 141, -536, 122, -533, 115, 2, 9, 436, -210, 446, -199, 460, -150, 468, -110, 464, -99, 455, -107, 442, -168, 432, -200, 432, -208, 2, 10, -152, -600, -145, -600, -142, -595, -142, -592, -151, -589, -194, -582, -221, -574, -230, -576, -225, -586, -208, -592, 1, 9, -198, -690, -186, -688, -184, -683, -185, -674, -189, -667, -210, -663, -225, -667, -226, -679, -222, -686, 1, 8, 180, 678, 192, 683, 194, 694, 192, 702, 176, 708, 160, 707, 157, 696, 161, 682, 2, 6, 175, 588, 178, 592, 174, 601, 150, 609, 119, 610, 101, 607, 2, 8, -181, -636, -167, -632, -167, -629, -219, -616, -224, -616, -226, -619, -226, -624, -218, -630, 2, 7, 186, 636, 192, 639, 192, 644, 181, 651, 147, 657, 137, 652, 149, 644, 2, 8, -517, 116, -510, 123, -496, 157, -498, 162, -509, 160, -517, 146, -523, 124, -522, 118, 2, 8, 494, -190, 502, -180, 508, -165, 509, -152, 504, -141, 499, -146, 490, -178, 490, -188, 2, 6, -201, -676, -191, -671, -196, -665, -210, -663, -222, -668, -217, -674, 2, 7, 180, 678, 190, 680, 188, 687, 170, 691, 163, 689, 162, 684, 167, 680, -1];
+const SPIRAL_STAR = [-213, -732, -183, -668, -151, -608, -118, -552, -84, -499, -48, -451, -10, -407, 29, -367, 69, -330, 111, -298, 155, -270, 200, -245, 246, -225, 294, -208, 344, -196, 394, -187, 447, -182, 501, -182, 556, -185, 508, -154, 464, -121, 422, -85, 384, -47, 349, -7, 318, 36, 289, 81, 264, 128, 242, 178, 223, 230, 208, 284, 195, 341, 186, 400, 180, 462, 178, 526, 178, 592, 182, 661, 189, 732, 161, 667, 132, 607, 101, 550, 68, 496, 34, 447, -2, 402, -40, 360, -79, 322, -119, 288, -161, 258, -205, 231, -251, 209, -298, 190, -346, 175, -396, 164, -448, 157, -501, 154, -556, 154, -509, 126, -465, 96, -424, 63, -387, 27, -353, -11, -322, -51, -295, -94, -271, -140, -250, -188, -233, -238, -218, -291, -208, -347, -200, -405, -196, -465, -195, -528, -198, -594, -204, -662]; // star accent outline: the eye's star without the stripe notches
+// heart eyes (hearts.svg): left heart melts and drips, right one is pierced by Cupid's arrow; both beat.
+// Shapes per eye: [flag, color, ax, ay, n, x0, y0, ...] ending with -1; flag 0 still, 1 body (melts),
+// 2 falling drop (anchor = its top), 3 arrow part (quivers around anchor = the wound). SVG units, origin = heart center.
+const HEART_PAL = [[231, 116, 191], [252, 3, 164], [243, 237, 244], [249, 237, 248], [21, 21, 21], [246, 186, 125], [246, 186, 124], [253, 2, 164], [25, 25, 25], [242, 224, 240]]; // colors from hearts.svg
+const HEART_PUPIL = [254, 242, 252];
+const HEART_L_HDR = [15, -94, 95, 515, 77];
+const HEART_L = [1, 0, 0, 0, 87, -241, -515, -186, -512, -137, -504, -84, -482, -53, -462, -21, -430, 9, -393, 26, -364, 76, -424, 119, -458, 176, -490, 216, -504, 253, -510, 306, -512, 344, -506, 393, -486, 427, -457, 461, -409, 491, -335, 499, -273, 499, -132, 483, -84, 471, -59, 419, 9, 329, 99, 266, 156, 248, 181, 224, 239, 218, 263, 216, 402, 213, 417, 205, 431, 192, 443, 183, 444, 161, 442, 156, 437, 152, 429, 143, 330, 133, 314, 111, 314, 96, 329, 84, 357, 70, 405, 51, 490, 45, 504, 34, 515, 6, 515, -6, 506, -18, 482, -37, 429, -87, 335, -98, 332, -106, 334, -116, 349, -123, 405, -129, 421, -140, 426, -160, 425, -174, 415, -182, 400, -199, 305, -215, 276, -230, 264, -238, 262, -247, 267, -261, 287, -282, 288, -292, 281, -300, 267, -313, 196, -327, 159, -345, 132, -402, 77, -436, 34, -470, -28, -490, -88, -496, -114, -499, -154, -496, -240, -480, -308, -470, -336, -454, -367, -432, -403, -402, -440, -341, -488, -323, -498, -289, -510, 2, 1, 17, 536, 25, 12, 536, 16, 537, 21, 541, 24, 551, 28, 556, 29, 561, 32, 563, 33, 569, 36, 571, 37, 577, 40, 583, 41, 583, 41, 611, 36, 621, 33, 621, 32, 623, 12, 625, 2, 625, -8, 615, -8, 577, -7, 577, -3, 559, 0, 551, 1, 551, 4, 541, -1];
+const HEART_R_HDR = [-51, -54, 96, 536, 80];
+const HEART_R = [1, 0, 0, 0, 95, 491, -536, 493, -513, 496, -508, 508, -497, 527, -490, 530, -485, 492, -476, 491, -472, 503, -460, 503, -453, 498, -452, 478, -464, 469, -463, 468, -459, 476, -454, 481, -447, 482, -439, 479, -436, 471, -437, 455, -450, 445, -452, 400, -428, 394, -421, 423, -381, 437, -356, 457, -307, 465, -273, 469, -209, 470, -106, 467, -85, 449, -33, 435, -10, 389, 49, 291, 147, 172, 246, 99, 322, 75, 352, 53, 398, 21, 526, 11, 535, 3, 536, -28, 533, -41, 520, -49, 505, -67, 442, -123, 354, -161, 322, -259, 252, -369, 182, -379, 168, -437, 113, -465, 78, -489, 37, -505, 3, -521, -46, -529, -86, -530, -112, -529, -170, -525, -214, -511, -268, -501, -295, -469, -354, -427, -406, -365, -452, -345, -462, -311, -472, -263, -474, -205, -470, -169, -464, -123, -446, -87, -424, -53, -392, -21, -352, -8, -326, -4, -325, 33, -372, 57, -394, 112, -432, 155, -454, 207, -468, 303, -468, 335, -458, 372, -440, 377, -440, 427, -467, 432, -510, 437, -519, 438, -521, 445, -497, 449, -494, 453, -517, 459, -525, 463, -525, 471, -494, 487, -534, 3, 2, 263, -383, 36, 491, -536, 493, -513, 496, -508, 508, -497, 527, -490, 530, -485, 492, -476, 491, -472, 503, -460, 502, -452, 479, -463, 469, -463, 468, -459, 476, -454, 481, -447, 482, -439, 479, -436, 471, -437, 453, -451, 443, -451, 373, -414, 292, -365, 282, -364, 273, -369, 272, -374, 275, -380, 427, -467, 432, -510, 438, -521, 445, -497, 449, -494, 453, -517, 459, -525, 463, -525, 471, -494, 487, -534, 0, 1, 0, 0, 35, 265, -422, 268, -414, 267, -392, 286, -386, 273, -377, 273, -369, 281, -364, 288, -364, 325, -384, 334, -367, 321, -334, 315, -335, 307, -348, 306, -331, 310, -308, 309, -300, 299, -298, 290, -306, 294, -252, 291, -232, 285, -233, 279, -245, 269, -322, 254, -307, 250, -318, 246, -350, 235, -342, 229, -349, 232, -357, 251, -370, 256, -381, 252, -386, 229, -391, 227, -395, 255, -407, 3, 3, 263, -383, 11, 429, -465, 445, -458, 443, -451, 373, -414, 292, -365, 282, -364, 273, -369, 272, -374, 275, -380, 411, -458, 425, -466, 0, 4, 0, 0, 22, 265, -422, 268, -414, 267, -392, 286, -386, 273, -377, 273, -369, 282, -364, 297, -367, 299, -364, 283, -352, 266, -359, 260, -358, 245, -352, 233, -343, 229, -347, 229, -354, 249, -367, 256, -381, 252, -386, 229, -391, 227, -395, 255, -407, 3, 5, 263, -383, 21, 491, -538, 493, -536, 495, -528, 495, -521, 491, -512, 491, -504, 510, -492, 521, -493, 527, -490, 531, -488, 531, -481, 495, -478, 489, -483, 489, -486, 485, -488, 483, -489, 473, -489, 473, -500, 479, -518, 483, -521, 485, -531, 3, 6, 263, -383, 12, 461, -530, 467, -527, 467, -489, 463, -481, 463, -477, 459, -473, 454, -472, 451, -473, 451, -474, 451, -514, 455, -517, 457, -528, 3, 5, 263, -383, 11, 438, -524, 443, -522, 445, -476, 441, -465, 436, -464, 433, -465, 431, -468, 431, -508, 431, -510, 433, -511, 435, -522, 3, 6, 263, -383, 13, 451, -466, 457, -464, 477, -454, 479, -452, 481, -443, 483, -442, 483, -435, 473, -435, 467, -442, 451, -453, 447, -456, 447, -460, 447, -464, 3, 5, 263, -383, 13, 471, -482, 481, -478, 491, -472, 495, -467, 501, -464, 505, -460, 505, -453, 501, -450, 497, -451, 495, -454, 471, -468, 467, -477, 467, -480, 2, 7, 307, -226, 11, 303, -226, 309, -224, 311, -222, 315, -213, 315, -205, 315, -201, 313, -199, 308, -198, 299, -200, 299, -220, 300, -223, 0, 8, 0, 0, 11, 325, -386, 327, -384, 327, -376, 335, -370, 335, -363, 331, -362, 323, -364, 323, -367, 313, -376, 313, -378, 323, -383, 3, 9, 263, -383, 6, 394, -432, 399, -430, 401, -428, 389, -422, 385, -427, 389, -430, -1];
+const SWEAT_EVERY_S = 8, SWEAT_TIME_S = 2.5; // worried: a sweat drop every 8 s that takes 2.5 s to drip
+const PUPIL_SHADE = 0.4; // pupil = darker shade of its own eye
+const LOOKS = [ // rx, ry, tilt, asym, prx, pry, pox, poy, lid, slant, bright
+  [88,112,12,1.08,18,72, 0,  0,0.00,0.00,1.0],  [80,100,6,1.05,28,54, 0,  0,0.00,0.00,1.0],
+  [78, 92, 3,1.10, 6, 7, 0,  0,0.00,0.00,1.0],  [88, 85,0,1.03,50,50,26,  2,0.22,0.15,1.0],
+  [78,108,14,0.85,14,60, 0,  0,0.00,0.00,1.0],  // STARP: left big star pupil, right smaller eye with cat slit
+  [80, 90, 0,1.00,14,14,18, 20,0.00,0.00,1.0],  // DOME: round top, flat bottom, black dot pupils low
+  [58, 98, 7,1.12,13,13, 8,  4,0.00,0.07,1.0],  // SLAB: tall full worried eyes, slight droop at the outer corners
+  [82, 88, 0,1.04,30,26,10, 40,0.00,0.00,1.0],  // GOOGLY: big round eyes, big cream pupils sitting low
+  [62,100, 0,1.00,12,12, 0,  0,0.00,0.00,1.0],  // FIRE: flickering flames (rx = width, ry = height)
+  [95,125, 0,1.00, 0, 0, 0,  0,0.00,0.00,1.0],  // SPIRAL: white 4-point stars, hypnotic spirals (rx/ry = star half-width/height)
+  [95, 90, 0,1.00, 0, 0, 0,  0,0.00,0.00,1.0],  // HEART: hearts.svg (ry = heart half-height)
+  [92, 85, 0,1.00,46,46,20,-10,0.50,0.10,0.8],  [88, 80,0,1.00,40,40,15, -5,0.60,0.10,0.45]];
+// Random animations: one every ANIM_EVERY_MS, idle look-around in between
+const ANIM_EVERY_MS = 4000;
+const A_NONE = -1, A_EYE_ROLL = 0, A_SQUINT = 1, A_SURPRISE = 2, A_SCAN = 3,
+      A_SHY = 4, A_LEAN = 5, A_DOUBLE_TAKE = 6, A_INSPECT = 7, A_DIZZY = 8,
+      A_TUG = 9, A_WATCH_DROP = 10, A_SWOON = 11, A_PEEK = 12; // the last four are heart-eyes only
+const ANIM_DUR = [1400, 2000, 1000, 2600, 1800, 1600, 1800, 2200, 0, 1800, 1900, 2200, 1500]; // ms; dizzy reuses the shake effect
+let animLean = 0, animP = 1; // animP: progress of the current animation 0..1
+// Star mode shake: eyes shrink and ricochet off the round display edge
+const BOUNCE_MS = 3500, BOUNCE_SPEED = 1100, BOUNCE_SCALE = 0.8, BOUNCE_JITTER = 0.5;
+let bx = 0, by = 0, bvx = 0, bvy = 0, faceScale = 1, bounceUntil = 0, lastFrame = 0;
+// After a dizzy spell or a star-mode bounce ends on its own, the eyes glare angrily for a bit
+const ANGRY_MS = 1000;
+let angryUntil = 0, wasDizzy = false, wasBouncing = false;
+function startBounce(now) {
+  const a = Math.random() * Math.PI * 2;
+  bvx = Math.cos(a) * BOUNCE_SPEED; bvy = Math.sin(a) * BOUNCE_SPEED; bounceUntil = now + BOUNCE_MS;
+}
+function updateBounce(now) {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000); lastFrame = now;
+  const on = now < bounceUntil;
+  faceScale = lerp(faceScale, on ? BOUNCE_SCALE : 1, 0.12);
+  if (!on) { bx = lerp(bx, 0, 0.1); by = lerp(by, 0, 0.1); return; }
+  bx += bvx * dt; by += bvy * dt;
+  const r = 110 * faceScale;
+  for (const s of [-1, 1]) {
+    const ex = bx + s * 106 * faceScale, ey = by - 8, d = Math.hypot(ex, ey), lim = 229 - r;
+    if (d > lim) {
+      const nx = ex / d, ny = ey / d, vn = bvx * nx + bvy * ny;
+      if (vn > 0) {
+        bvx -= 2 * vn * nx; bvy -= 2 * vn * ny;
+        const j = rand(-BOUNCE_JITTER, BOUNCE_JITTER), c = Math.cos(j), sn = Math.sin(j); // chaotic deflection
+        const vx = bvx * c - bvy * sn; bvy = bvx * sn + bvy * c; bvx = vx;
+      }
+      bx -= nx * (d - lim); by -= ny * (d - lim);
+    }
+  }
+}
+let anim = A_NONE, animStart = 0, nextAnim = ANIM_EVERY_MS, animBlinkL = 0, animBlinkR = 0;
+const START = NAMES.indexOf(startName);
+let cur = [...LOOKS[START]], cycleIdx = TAP_CYCLE.indexOf(START), mood = START;
+const IDLE_MS = 1500, WOBBLE = 0.03, CROSS_CHANCE = 15, RIGHT_EYE_DROP = 7, SWAY_PX = 12, SWAY_TILT = 10, DIZZY_SPEED = 7.0, STAR_COUNT = 3, STAR_PUPIL_R = 56, SWIRL_R = 42;
+let shakeAmp = 0, headTilt = 0;
+let lookLX = 0, lookLY = 0, lookRX = 0, lookRY = 0, tiltX = 0, tiltY = 0;
+let idleX = 0, idleY = 0, cross = 0, crossTarget = 0, lastActive = 0, nextSaccade = 0;
+let curiousUntil = 0, perkUntil = 0, trackUntil = 0, idleTilt = 0; // idle: squint at something, perk up, curious head tilt
+let stretchX = 0, stretchY = 0, prevLX = 0, prevLY = 0; // squash & stretch on quick glances
+const EGG_TOP = 0.82, BLINK_MS = 1000; // bean-shaped eyes; slow blink that closes to a curved line
+let dizzyUntil = 0, nextBlink = 0, blinkStart = 0, touchStart = 0, batteryShowUntil = 0;
+let touching = false, longPressFired = false, batteryPct = 80;
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function batteryPercent(v) {
+  const vs = [3.30,3.60,3.70,3.75,3.80,3.90,4.00,4.10,4.20], ps = [0,5,15,30,45,65,80,92,100];
+  if (v <= vs[0]) return 0;
+  for (let i = 1; i < 9; i++) if (v <= vs[i]) return Math.floor(ps[i-1] + (ps[i]-ps[i-1]) * (v-vs[i-1]) / (vs[i]-vs[i-1]));
+  return 100;
+}
+
+function fillRotEllipse(cx, cy, rx, ry, deg, rgb, b) {
+  g.fillStyle = `rgb(${rgb[0]*b},${rgb[1]*b},${rgb[2]*b})`;
+  g.beginPath(); g.ellipse(cx, cy, rx, ry, deg * Math.PI / 180, 0, Math.PI * 2); g.fill();
+}
+
+// Bean/egg path: top half (in the shape's own frame) is flatter than the bottom.
+function eggPath(cx, cy, rx, ry, deg) {
+  const r = deg * Math.PI / 180;
+  g.beginPath(); g.ellipse(cx, cy, rx, ry * EGG_TOP, r, Math.PI, 2 * Math.PI); g.ellipse(cx, cy, rx, ry, r, 0, Math.PI); g.closePath();
+}
+
+function drawEye(cx, cy, left, lx, ly, blink, t) {
+  const [crx, cry, ctilt, asym, cprx, cpry, pox, poy, clid, cslant, b] = cur;
+  const k = (left ? 1 : asym) * faceScale, ph = left ? 0 : 2.1, inward = left ? 1 : -1;
+  const turn = (lookLX + lookRX) * 0.5; // head turn: the eye on the side it looks toward gets narrower
+  const rx = crx * k * (1 + WOBBLE * Math.sin(t * 1.3 + ph)) * (1 - 0.12 * Math.max(0, -turn * inward)) * (1 + 0.5 * stretchX - 0.5 * stretchY); // never widens, so eyes cant touch
+  const ry = cry * k * (1 + WOBBLE * Math.sin(t * 1.7 + ph + 1)) * (1 + stretchY - 0.5 * stretchX) * (1 - 0.2 * blink); // blink squashes
+  const prx = cprx * k, pry = cpry * k;
+  const tilt = (left ? ctilt + 2 : -ctilt - 1) + headTilt;
+  const twoTone = mood === DOME || mood === SLAB || mood === GOOGLY; // blue + orange styles
+  const col = twoTone ? (left ? BLUE_EYE : ORANGE_EYE) : (left ? LEFT_EYE : RIGHT_EYE);
+  if (mood === HEART) { // hearts.svg: beat (lub-dub) only when love-struck; the left one oozes and drips, the right one has Cupid's arrow stuck in it
+    const d = left ? HEART_L : HEART_R, h = left ? HEART_L_HDR : HEART_R_HDR;
+    const beat = 0.5 - 0.5 * Math.cos((beatPh % 1) * 2 * Math.PI); // love-struck: hearts swell bigger and smaller, smoothly
+    const swoon = anim === A_SWOON ? Math.sin(Math.PI * animP) : 0; // swoon: one dreamy swell and sway
+    const sc = cry * k / h[3] * (1 + 0.18 * love * beat + 0.12 * swoon), sqz = 1 - 0.85 * blink;
+    const rot = (headTilt + (love * 7 + swoon * 6) * Math.sin(t * 3 + (left ? 0 : 1))) * Math.PI / 180, cr = Math.cos(rot), sr = Math.sin(rot);
+    const sag = 0.06 + 0.06 * Math.sin(t * 1.2 + (left ? 0 : 1.5)) + 0.3 * love; // below the melt line the body stretches down
+    const tq = t - loveStart / 1000; // seconds since the last hit
+    const qa = (loveStart > 0 ? 0.35 * Math.exp(-3 * tq) * Math.sin(45 * tq) : 0) + 0.04 * love * beat // arrow: wobbles after a hit, twitches with the racing heart
+      + (anim === A_TUG && animP > 0.3 ? 0.16 * Math.sin(t * 32) * Math.sin(Math.PI * (animP - 0.3) / 0.7) : 0); // tug: wiggles it
+    const cq = Math.cos(qa), sq2 = Math.sin(qa);
+    const q = (dropPh + (left ? 0 : 0.5)) % 1; // drop: swells at the tip, then falls away and shrinks
+    const grow = q < 0.25 ? q / 0.25 : (q > 0.85 ? (1 - q) / 0.15 : 1), fall = q > 0.25 ? ((q - 0.25) / 0.75) ** 2 * 900 : 0;
+    const toScreen = (x, y) => [cx + (x * cr - y * sr) * sc, cy + (x * sr + y * cr) * sc * sqz];
+    for (let i = 0; d[i] >= 0; ) {
+      const flag = d[i], ci = d[i + 1], ax = d[i + 2], ay = d[i + 3], n = d[i + 4];
+      i += 5;
+      const p = HEART_PAL[ci];
+      g.fillStyle = `rgb(${p[0] * b},${p[1] * b},${p[2] * b})`; g.beginPath();
+      for (let j = 0; j < n; j++, i += 2) {
+        let x = d[i], y = d[i + 1];
+        if (flag === 1 && y > h[4]) y += (y - h[4]) * sag;
+        else if (flag === 2) { x = ax + (x - ax) * grow; y = ay + (y - ay) * grow + fall + (ay > h[4] ? (ay - h[4]) * sag : 0); }
+        else if (flag === 3) { const u = x - ax, v = y - ay; x = ax + u * cq - v * sq2; y = ay + u * sq2 + v * cq; }
+        g.lineTo(...toScreen(x, y));
+      }
+      g.closePath(); g.fill();
+      if (flag === 1 && blink < 0.6) { // pale pupil follows the gaze; swells when love-struck
+        const [px, py] = toScreen(h[0] + lx * 0.22 * h[3], h[1] + ly * 0.2 * h[3]), r = h[2] * (1 + 0.3 * love) * sc;
+        g.fillStyle = `rgb(${HEART_PUPIL.map(c => c * b)})`; g.beginPath(); g.ellipse(px, py, r, r * sqz, 0, 0, 2 * Math.PI); g.fill();
+      }
+    }
+    return;
+  }
+  if (mood === SPIRAL) { // star + tip stripes stay put; the main spiral spins inside its circle; a blink squashes it
+    const d = SPIRAL_L, h = SPIRAL_L_HDR, mx = left ? 1 : -1; // the right eye is the left one mirrored, so they match
+    const sc = ry / h[2] * (1 + SPIRAL_GROW * hypno), sq = 1 - 0.85 * blink, rot = headTilt * Math.PI / 180, cr = Math.cos(rot), sr = Math.sin(rot);
+    const cs = Math.cos(spinPh), ss = Math.sin(spinPh); // the mirror makes the right spiral spin the other way
+    const px = cx + (mx * h[0] * cr - h[1] * sr) * sc, py = cy + (mx * h[0] * sr + h[1] * cr) * sc * sq; // spiral center on screen
+    const cols = [`rgb(${255 * b},${255 * b},${255 * b})`, `rgb(${255 * b},${40 * b},${25 * b})`, '#0f0f0f'];
+    for (let i = 0; d[i] >= 0; ) {
+      const kind = d[i++], n = d[i++];
+      g.save();
+      if (kind >= 10) { g.beginPath(); g.ellipse(px, py, h[3] * sc, h[3] * sc * sq, 0, 0, 2 * Math.PI); g.clip(); }
+      g.fillStyle = cols[kind % 10]; g.beginPath();
+      for (let j = 0; j < n; j++, i += 2) {
+        let x = d[i], y = d[i + 1];
+        if (kind >= 10) { const u = x - h[0], v = y - h[1]; x = h[0] + u * cs - v * ss; y = h[1] + u * ss + v * cs; }
+        x *= mx;
+        g.lineTo(cx + (x * cr - y * sr) * sc, cy + (x * sr + y * cr) * sc * sq);
+      }
+      g.closePath(); g.fill('evenodd'); g.restore();
+    }
+    return;
+  }
+  if (mood === FIRE) { // flame eyes traced from the custom drawing; right eye = mirror image; a blink squashes it
+    const ph = left ? 0 : 1.7;
+    // shaken: each flame darts and bobs on its own; its tips trail opposite the motion like real fire
+    cx += flare * (Math.sin(t * 6.5 + ph) * 16 + Math.sin(t * 11 + ph * 2) * 6);
+    cy += flare * Math.sin(t * 8 + ph) * 10;
+    const S = rx * 3.2 * (1 + 0.25 * flare); // as big as fits: top drop reaches the screen edge
+    const f = { cx, cy: cy + 0.17 * S, S, dir: left ? 1 : -1, sy: 1 - 0.85 * blink, ph, t, fl: flare, lean: -flare * 0.3 * Math.cos(t * 6.5 + ph) };
+    const fo = left ? FIRE_L_OUT : FIRE_R_OUT, fi = left ? FIRE_L_CORE : FIRE_R_CORE, fp = left ? FIRE_L_PUPIL : FIRE_R_PUPIL;
+    const body = `rgb(${fo.map(c => c * b)})`, core = `rgb(${fi.map(c => c * b)})`;
+    const dot = ([x, y], r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };
+    fillFlame(f, FLAME_OUT, body);
+    fillFlame(f, FLAME_CORE, core);
+    fillFlame(f, FLAME_DROP1, body); fillFlame(f, FLAME_DROP2, body); // the two drops above the tip
+    if (blink < 0.6) { g.fillStyle = `rgb(${fp.map(c => c * b)})`; dot(flamePt(f, FLAME_PUPIL[0] + lx * 0.05 * f.dir, FLAME_PUPIL[1] + ly * 0.04), FLAME_PUPIL[2] * S * (1 + 0.3 * flare)); }
+    if (flare > 0.05) { // embers rising off the flare
+      g.fillStyle = core;
+      for (let k = 0; k < 6; k++) { const q = (t * 1.6 + k / 6) % 1; dot([f.cx + Math.sin(k * 2.3 + t * 4) * S * 0.25, f.cy - S * (0.5 + q * 0.6)], (1 - q) * 5 * flare + 1); }
+    }
+    return;
+  }
+  g.fillStyle = `rgb(${col.map(c => c * b)})`; eggPath(cx, cy, rx, ry, tilt); g.fill();
+
+  // pupil, clipped to the eye outline
+  const star = mood === STARP && left;
+  const sr = STAR_PUPIL_R * faceScale * (1 + 0.06 * Math.sin(t * 3));
+  const swirl = mood === STARP && !left, sw = SWIRL_R * faceScale, big = star ? sr : sw;
+  const reachX = (star || swirl) ? (rx - big) * 0.5 : (rx - prx * 0.5) * 0.6, reachY = (star || swirl) ? (ry - big) * 0.5 : (ry - pry * 0.5) * 0.6;
+  let px = cx + inward * (pox * k + cross * rx * 0.35) + lx * reachX;
+  let py = cy + poy * k + ly * reachY;
+  if (mood === DOME) { // stay inside the dome: above the flat bottom, away from its narrower lower corners
+    const side = 0.85 * rx - prx - 4;
+    px = clamp(px, cx - side, cx + side);
+    py = Math.min(py, cy + ry * 0.45 - pry - 4);
+  }
+  g.save(); eggPath(cx, cy, rx, ry, tilt); g.clip();
+  if (blink > 0.6) {} // nearly closed: only the eye's curved outline shows, no pupil
+  else if (star) drawStar(px, py, sr, 0.3 + 0.45 * Math.sin(t * 1.3), `rgb(${col.map(c => c * b * PUPIL_SHADE)})`);
+  else if (swirl) { // spinning 2-turn spiral line
+    g.strokeStyle = `rgb(${col.map(c => c * b * PUPIL_SHADE)})`; g.lineWidth = 7 * faceScale; g.lineCap = g.lineJoin = 'round';
+    g.beginPath();
+    for (let i = 0; i <= 80; i++) { const q = i / 80, a = q * 4 * Math.PI - t * 3; g.lineTo(px + q * sw * Math.cos(a), py + q * sw * Math.sin(a)); }
+    g.stroke();
+  }
+  else if (mood === DOME || mood === SLAB) fillRotEllipse(px, py, prx, pry, tilt, [0, 0, 0], 1); // black dot pupils
+  else if (mood === GOOGLY) fillRotEllipse(px, py, prx, pry, tilt, CREAM, b);
+  else fillRotEllipse(px, py, prx, pry, tilt, col, b * PUPIL_SHADE);
+  g.restore();
+  // flat bottom for Dome (cut a bit below the middle)
+  const cut = mood === DOME ? 0.45 : 0;
+  if (cut > 0) { g.fillStyle = '#000'; g.fillRect(cx - rx - 8, cy + ry * cut, 2 * rx + 16, 2 * ry); }
+
+  // a full blink hides the eye; a thin curved line is drawn in its place below
+  const lid = clid + (1 - clid) * blink, slant = cslant * (1 - blink);
+  if (lid > 0.01 || slant > 0.01) {
+    const top = cy - ry - 4, h = 2 * ry + 8;
+    const xIn = cx + inward * (rx + 8), xOut = cx - inward * (rx + 8);
+    g.fillStyle = '#000'; g.beginPath();
+    g.moveTo(xOut, 0); g.lineTo(xIn, 0); g.lineTo(xIn, top + lid * h); g.lineTo(xOut, top + Math.min(1, lid + slant) * h);
+    g.closePath(); g.fill();
+  }
+  if (blink > 0.85) { // closed: a thin curved line where the eye was (like the reference)
+    const a = tilt * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+    g.strokeStyle = `rgb(${col.map(c => c * b)})`; g.lineWidth = 5 * faceScale; g.lineCap = 'round'; g.beginPath();
+    for (let i = -30; i <= 30; i++) { const u = i / 30, ux = u * rx * 0.9, uy = ry * (0.3 + 0.18 * (1 - u * u)); g.lineTo(cx + ux * cs - uy * sn, cy + ux * sn + uy * cs); }
+    g.stroke();
+  }
+}
+
+// A tiny copy of the spiral eye's star outline (SPIRAL_STAR), half-height r.
+function drawEyeStar(x, y, r, rot, color) {
+  const n = SPIRAL_STAR.length / 2, s = r / SPIRAL_L_HDR[2], cr = Math.cos(rot), sr = Math.sin(rot);
+  g.fillStyle = color; g.beginPath();
+  for (let i = 0; i < n; i++) { const px = SPIRAL_STAR[2 * i], py = SPIRAL_STAR[2 * i + 1]; g.lineTo(x + (px * cr - py * sr) * s, y + (px * sr + py * cr) * s); }
+  g.closePath(); g.fill();
+}
+function drawStar(cx, cy, r, rot, color) {
+  g.fillStyle = color; g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * 0.45 : r, a = rot + i * Math.PI / 5 - Math.PI / 2;
+    g.lineTo(cx + rr * Math.cos(a), cy + rr * Math.sin(a));
+  }
+  g.closePath(); g.fill();
+}
+
+function drawDizzyStars(t) {
+  if (shakeAmp < 0.02) return;
+  const fade = Math.min(1, shakeAmp * 3);
+  for (let k = 0; k < STAR_COUNT; k++) {
+    const b = t * 3 + k * Math.PI * 2 / STAR_COUNT, depth = (Math.sin(b) + 1) / 2;
+    drawStar(233 + 120 * Math.cos(b), 92 + 20 * Math.sin(b), (8 + 7 * depth) * fade, t * 5 + k, 'rgb(255,220,60)');
+  }
+}
+
+// The custom flame drawing (flame_emblem.svg, orange flame), simplified: [x, y] in flame heights, origin at the
+// body center, y down, tip curling toward -x. The blue eye is drawn as its mirror image. FLAME_PUPIL: [x, y, radius].
+const FLAME_OUT = [[-0.293, -0.671], [-0.295, -0.575], [-0.277, -0.417], [-0.268, -0.37], [-0.264, -0.368], [-0.246, -0.246], [-0.204, -0.108], [-0.21, -0.105], [-0.255, -0.136], [-0.326, -0.203], [-0.34, -0.203], [-0.344, -0.197], [-0.344, -0.103], [-0.335, -0.032], [-0.331, -0.03], [-0.326, 0.011], [-0.295, 0.088], [-0.255, 0.164], [-0.219, 0.209], [-0.161, 0.262], [-0.095, 0.302], [-0.041, 0.32], [0.012, 0.329], [0.101, 0.325], [0.159, 0.307], [0.206, 0.276], [0.259, 0.222], [0.291, 0.175], [0.326, 0.093], [0.344, 0.004], [0.344, -0.108], [0.308, -0.223], [0.273, -0.288], [0.166, -0.437], [0.139, -0.493], [0.128, -0.493], [0.124, -0.482], [0.124, -0.459], [0.101, -0.366], [0.097, -0.364], [0.084, -0.308], [0.075, -0.301], [0.014, -0.395], [-0.101, -0.52], [-0.248, -0.649], [-0.277, -0.671]];
+const FLAME_CORE = [[-0.148, -0.348], [-0.157, -0.341], [-0.153, -0.261], [-0.117, -0.032], [-0.124, -0.03], [-0.166, -0.061], [-0.179, -0.056], [-0.186, 0.035], [-0.175, 0.093], [-0.155, 0.146], [-0.13, 0.182], [-0.095, 0.218], [-0.039, 0.256], [0.03, 0.278], [0.117, 0.271], [0.168, 0.242], [0.224, 0.193], [0.242, 0.166], [0.259, 0.104], [0.262, 0.042], [0.251, -0.03], [0.237, -0.083], [0.204, -0.172], [0.144, -0.288], [0.13, -0.286], [0.108, -0.255], [0.088, -0.203], [0.079, -0.157], [0.072, -0.154], [0.032, -0.212], [-0.008, -0.255], [-0.07, -0.306]];
+const FLAME_DROP1 = [[-0.424, -0.695], [-0.431, -0.689], [-0.429, -0.598], [-0.424, -0.575], [-0.406, -0.54], [-0.393, -0.531], [-0.371, -0.531], [-0.351, -0.553], [-0.351, -0.586], [-0.355, -0.6], [-0.391, -0.651], [-0.391, -0.658], [-0.404, -0.673], [-0.413, -0.693]];
+const FLAME_DROP2 = [[-0.393, -0.8], [-0.398, -0.796], [-0.402, -0.744], [-0.398, -0.742], [-0.398, -0.731], [-0.391, -0.722], [-0.373, -0.718], [-0.36, -0.727], [-0.353, -0.747], [-0.36, -0.765], [-0.373, -0.78], [-0.378, -0.796], [-0.382, -0.8]];
+const FLAME_PUPIL = [0.063, 0.095, 0.065];
+
+// One traced point -> screen, with flicker: points above the center sway and stretch (wilder when flaring).
+function flamePt(f, x0, y0) {
+  const up = Math.max(0, -y0), sp = 1 + f.fl;
+  const sway = Math.sin(f.t * 7 * sp + f.ph + y0 * 5) * (0.035 + 0.06 * f.fl) * up;
+  if (y0 < 0) y0 *= 1 + (0.05 + 0.12 * f.fl) * Math.sin(f.t * 9 * sp + f.ph);
+  return [f.cx + f.S * (f.dir * x0 + sway + f.lean * up), f.cy + f.S * y0 * f.sy];
+}
+
+// Fill one traced shape of the flame.
+function fillFlame(f, pts, color) {
+  g.fillStyle = color; g.beginPath();
+  for (const [x, y] of pts) g.lineTo(...flamePt(f, x, y));
+  g.closePath(); g.fill();
+}
+
+// worried: every SWEAT_EVERY_S a big sweat drop droops down around the outside of the left eye
+
+function drawSweat(cx, cy, rx, ry, t) {
+  const q = (t % SWEAT_EVERY_S) / SWEAT_TIME_S;
+  if (q >= 1) return;
+  let r = 20 * faceScale;
+  if (q < 0.15) r *= q / 0.15; else if (q > 0.85) r *= (1 - q) / 0.15; // pop in, drip off
+  const s = q * q, a = (200 - 60 * s) * Math.PI / 180, tip = 2.2 + 1.2 * s;
+  const x = cx + (rx + 20 * faceScale + 6) * Math.cos(a), y = cy + (ry + 6) * Math.sin(a);
+  g.fillStyle = `rgb(${SWEAT})`; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(x - r * 0.97, y - r * 0.25); g.lineTo(x + r * 0.97, y - r * 0.25); g.lineTo(x + r * 0.15, y - r * tip); g.fill();
+}
+
+function drawBattery(cx, cy, pct, showText) {
+  const c = pct <= 15 ? '#f00' : pct <= 40 ? '#ff0' : '#0f0';
+  g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.roundRect(cx-40, cy-18, 76, 36, 6); g.stroke();
+  g.fillStyle = '#fff'; g.fillRect(cx+36, cy-8, 6, 16);
+  g.fillStyle = c; g.fillRect(cx-36, cy-14, Math.floor(68*pct/100), 28);
+  if (showText) { g.fillStyle = '#fff'; g.font = 'bold 32px monospace'; g.textAlign = 'center'; g.fillText(pct + '%', cx, cy + 64); }
+}
+
+function drawFrame(now) {
+  const t = now / 1000;
+  const dts = Math.min(0.1, Math.max(0, now - lastSpin) / 1000);
+  beatPh += dts * (0.8 + 0.8 * love); dropPh += dts * (0.4 + 0.5 * love); // heart eyes: swell rhythm, dripping (faster when love-struck)
+  spinPh += dts * SPIRAL_SPIN * hypno; lastSpin = now; // only spins while hypnotizing, slowing to a stop
+  let blink = 0;
+  const shaking = now < dizzyUntil || now < bounceUntil || now < flareUntil || now < hypnoUntil || now < loveUntil;
+  if (shaking) nextBlink = Math.max(nextBlink, now + 1500); // no blinking while shaken, nor right after
+  if (now >= nextBlink) { blinkStart = now; nextBlink = now + 12000; } // one blink every 12 s
+  const bt = now - blinkStart;
+  if (!shaking && bt >= 0 && bt < BLINK_MS) { // close 30%, hold 35%, open 35%, eased
+    const q = bt / BLINK_MS, s = q < 0.3 ? q / 0.3 : (q < 0.65 ? 1 : (1 - q) / 0.35); blink = s * s * (3 - 2 * s);
+  }
+  if (mood === SLEEPY || mood === LOWBAT) blink = Math.max(blink, 0.1 + 0.1 * Math.sin(t * 1.5));
+  if (mood === HEART || mood === SPIRAL) blink = 0; // these two never blink
+
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
+  const ox = (lookLX + lookRX) * 16, oy = (lookLY + lookRY) * 7; // whole face swings toward the gaze
+  let sx = SWAY_PX * shakeAmp * Math.sin(t * 2.2);
+  const sy = SWAY_PX * 0.4 * shakeAmp * Math.sin(t * 4.4);
+  headTilt = SWAY_TILT * shakeAmp * Math.sin(t * 2.2);
+  sx += 22 * animLean; headTilt += 16 * animLean; // lean animation
+  headTilt += idleTilt;
+  const gap = 106 * faceScale;
+  const mh = 30 * hypno, mv = -40 * hypno + 8 * hypno * Math.sin(t * 2.2); // hypnotizing: eyes spread, rise and hover
+  if (mood === SPIRAL) SPIRAL_STARS.forEach(([x, y, r], k) => // twinkling star accents (spin along when hypnotizing)
+    drawEyeStar(x, y, r * (0.6 + 0.4 * Math.sin(t * 3 + k * 2)), t * 0.4 + spinPh * 0.3 + k, '#fff'));
+  drawEye(233 - gap - mh + ox + sx + bx, 225 + mv + oy + sy + by, true, lookLX, lookLY, Math.max(blink, animBlinkL), t);
+  if (mood === SLAB && blink < 0.5) drawSweat(233 - gap + ox + sx + bx, 225 + oy + sy + by, cur[0] * faceScale, cur[1] * faceScale, t);
+  drawEye(233 + gap + mh + ox + sx + bx, 225 + mv + oy + RIGHT_EYE_DROP + sy + by, false, lookRX, lookRY, Math.max(blink, animBlinkR), t);
+  drawDizzyStars(t);
+
+  if (now < batteryShowUntil) drawBattery(233, 370, batteryPct, true);
+  else if (mood === LOWBAT && Math.floor(now / 600) % 2) drawBattery(233, 390, batteryPct, false);
+}
+
+function loop(now) {
+  if (touching && !longPressFired && now - touchStart > 1000) longPressFired = true;
+  // mood: low battery > tap choice. Dizzy keeps the current pupil style and just spins it.
+  mood = batteryPct <= 15 ? LOWBAT : TAP_CYCLE[cycleIdx];
+  if (mood !== STARP) bounceUntil = 0; // the bounce belongs to star mode only: switching away stops it
+  const dizzy = now < dizzyUntil;
+  const bouncing = now < bounceUntil;
+  if ((wasDizzy && !dizzy) || (wasBouncing && !bouncing && mood === STARP)) angryUntil = now + ANGRY_MS; // mode switch cancels quietly
+  wasDizzy = dizzy; wasBouncing = bouncing;
+  // cartoon dizzy: pupils spin in opposite directions while the head sways; calms down over the 3 s
+  let dzX = 0, dzY = 0;
+  flare = now < flareUntil ? (flareUntil - now) / FLARE_MS : 0; flare = flare * flare * (3 - 2 * flare); // eases back down
+  const hp = now < hypnoUntil ? 1 - (hypnoUntil - now) / HYPNO_MS : 1; // swell fast, hover, sink back
+  hypno = Math.max(0, Math.min(1, hp / 0.12, (1 - hp) / 0.3)); hypno = hypno * hypno * (3 - 2 * hypno);
+  const lp = now < loveUntil ? 1 - (loveUntil - now) / LOVE_MS : 1; // love-struck: hits fast, fades slowly
+  love = Math.max(0, Math.min(1, lp / 0.08, (1 - lp) / 0.5));
+  shakeAmp = 0;
+  if (dizzy) {
+    const amp = (dizzyUntil - now) / 3000, a = now / 1000 * DIZZY_SPEED;
+    dzX = Math.cos(a) * amp; dzY = Math.sin(a) * amp;
+    shakeAmp = amp;
+  }
+  // random animation every ANIM_EVERY_MS (skipped while dizzy, touched or low on battery)
+  if (now >= nextAnim) {
+    nextAnim = now + (mood === SPIRAL || mood === HEART ? ANIM_EVERY_MS / 2 : ANIM_EVERY_MS); // spiral + heart eyes are extra curious
+    if (!dizzy && !touching && mood !== LOWBAT && now >= bounceUntil && now >= angryUntil) {
+      anim = mood === HEART && Math.random() < 0.6 ? A_TUG + Math.floor(Math.random() * 4) : Math.floor(Math.random() * A_TUG); animStart = now; // hearts mostly do their own bits
+      if (anim === A_WATCH_DROP) dropPh = Math.floor(dropPh); // a fresh drop starts forming so it can watch it fall
+      if (anim === A_DIZZY) { if (mood === FIRE) flareUntil = now + FLARE_MS / 2; else if (mood === SPIRAL) hypnoUntil = now + HYPNO_MS; else if (mood === HEART) { loveUntil = now + LOVE_MS; loveStart = now; } else dizzyUntil = now + 1800; anim = A_NONE; }
+    }
+  }
+  const p = anim === A_NONE ? 1 : (now - animStart) / ANIM_DUR[anim];
+  if (p >= 1) anim = A_NONE;
+  animP = p;
+  const env = anim === A_NONE ? 0 : Math.sin(Math.PI * p);
+  animBlinkL = animBlinkR = animLean = 0;
+  const side = Math.floor(animStart) % 2 ? 1 : -1, take = p > 0.45 ? Math.sin(Math.PI * (p - 0.45) / 0.55) : 0; // random side; double-take snap
+  let animGaze = false, agx = 0, agy = 0;
+  switch (anim) {
+    case A_EYE_ROLL: animGaze = true; agx = Math.cos(Math.PI - p * 2 * Math.PI) * 0.9; agy = -Math.sin(Math.PI - p * 2 * Math.PI) * 0.9; break;
+    case A_SQUINT: animGaze = true; agx = Math.sin(p * 3 * Math.PI) * 0.8; break;
+    case A_SCAN: animGaze = true; agx = -Math.cos(p * 2 * Math.PI) * 0.9; agy = -0.1; animLean = agx * 0.3; break; // slow sweep across the room
+    case A_SHY: animGaze = true; agx = -0.4; agy = 0.9; break;
+    case A_LEAN: animLean = Math.sin(p * 2 * Math.PI); break;
+    case A_DOUBLE_TAKE: animGaze = true; agx = side * (p < 0.3 ? 0.5 : p < 0.45 ? 0 : 0.95); break; // glance, look away, snap back
+    case A_INSPECT: animGaze = true; agx = side * 0.35 + Math.sin(p * 6 * Math.PI) * 0.12; agy = 0.6; animLean = side * 0.35 * env; break; // lean in and study something
+    case A_TUG: animGaze = true; agx = 0.9; agy = -0.85; break; // stare at the arrow, then try to wiggle it out
+    case A_WATCH_DROP: animGaze = true; agx = -0.2; agy = Math.min(1, -0.1 + 1.4 * p); break; // watch a drop form and fall
+    case A_SWOON: animGaze = true; agx = 0.35 * Math.sin(p * 2 * Math.PI); agy = -0.75; break; // dreamy sigh, eyes drift up
+  }
+
+  const tg = [...LOOKS[mood]];
+  if (dizzy) { tg[0] *= 0.9; tg[1] *= 1.15; tg[8] = 0; tg[9] = 0; } // surprised: open, taller + narrower (keeps a gap), same pupils
+  if (anim === A_SQUINT) tg[8] = Math.max(tg[8], 0.45 * env);
+  if (anim === A_SHY) tg[8] = Math.max(tg[8], 0.35 * env);
+  if (anim === A_SCAN || anim === A_INSPECT) tg[8] = Math.max(tg[8], 0.22 * env);
+  if (anim === A_DOUBLE_TAKE) { tg[1] *= 1 + 0.2 * take; tg[8] *= 1 - take; tg[9] *= 1 - take; }
+  if (anim === A_SURPRISE) { tg[1] *= 1 + 0.25 * env; tg[8] *= 1 - env; tg[9] *= 1 - env; }
+  if (now < curiousUntil) tg[8] = Math.max(tg[8], 0.18); // squint to focus on something
+  if (now < perkUntil) tg[1] *= 1.08;                     // perk up: something caught its eye
+  if (now < angryUntil) { // angry: lids slant down toward the middle; eases in fast, out smoothly; pupils untouched
+    const ap = 1 - (angryUntil - now) / ANGRY_MS;
+    let w = Math.min(1, ap / 0.2, (1 - ap) / 0.4); w = w * w * (3 - 2 * w);
+    tg[8] = lerp(tg[8], Math.max(tg[8], 0.35), w); tg[9] = lerp(tg[9], -0.3, w);
+  }
+  cur = cur.map((v, i) => lerp(v, tg[i], 0.25));
+  // idle: no mouse/touch for IDLE_MS -> eyes dart around (pointermove/pointerdown reset lastActive)
+  if (touching || dizzy) lastActive = now;
+  let gx = tiltX, gy = tiltY;
+  if (now - lastActive > IDLE_MS) {
+    if (now >= nextSaccade) {
+      idleX = rand(-0.8, 0.8); idleY = rand(-0.6, 0.6);
+      crossTarget = Math.random() * 100 < CROSS_CHANCE ? 1 : 0;
+      nextSaccade = now + rand(350, 1500); // quick, busy glances
+      const roll = Math.random() * 100;
+      if (roll < 25) { idleX = rand(-1, 1); idleY = rand(-0.8, 0.8); curiousUntil = now + 700; } // peer hard at something
+      else if (roll < 40) perkUntil = now + 450;
+      else if (roll < 62) { trackUntil = now + 2500; nextSaccade = trackUntil; perkUntil = now + 450; } // spotted a fly
+      if (mood === HEART && now >= trackUntil && Math.random() < 0.55) { // keeps checking the arrow stuck in it (or the drop falling off)
+        const arrow = Math.random() < 0.75;
+        idleX = arrow ? 0.9 : -0.25; idleY = arrow ? -0.85 : 0.95; curiousUntil = now + 900; perkUntil = now + 450; nextSaccade = now + 1000;
+      }
+      if (mood === SPIRAL && now >= trackUntil && Math.random() < 0.35) { // distracted by one of the twinkling stars
+        const st = SPIRAL_STARS[Math.floor(Math.random() * 4)], cl = v => Math.max(-1, Math.min(1, v));
+        idleX = cl((st[0] - 233) / 110); idleY = cl((st[1] - 225) / 110); curiousUntil = now + 900; nextSaccade = now + 900;
+      }
+    }
+    if (now < trackUntil) { idleX = Math.sin(now * 0.0019) * 0.8; idleY = Math.sin(now * 0.0027 + 1) * 0.5; } // follow it around smoothly
+    gx = idleX; gy = idleY;
+  } else crossTarget = 0;
+  if (crossTarget > 0) { gx *= 0.2; gy *= 0.2; }
+  if (animGaze) { gx = agx; gy = agy; crossTarget = 0; }
+  if (mood === SPIRAL && hypno > 0.05) { gx = gy = 0; crossTarget = 0; } // hypnotizing: stare straight at you
+  if (now < bounceUntil) { const sp = Math.hypot(bvx, bvy); gx = bvx / sp * 0.8; gy = bvy / sp * 0.8; crossTarget = 0; } // look where they fly
+  let gRX = gx, gRY = gy;
+  if (anim === A_PEEK) { gx = 0.8; gRX = -0.8; gy = gRY = 0.1; } // each heart peeks over at the other
+  if (dizzy) { gx = dzX; gy = dzY; gRX = -dzX; gRY = dzY; } // mirrored spin
+  const kl = dizzy ? 0.25 : 0.22, kr = dizzy ? 0.25 : 0.11;
+  lookLX = lerp(lookLX, gx, kl); lookLY = lerp(lookLY, gy, kl);
+  lookRX = lerp(lookRX, gRX, kr); lookRY = lerp(lookRY, gRY, kr);
+  stretchX = lerp(stretchX, Math.min(0.18, Math.abs(lookLX - prevLX) * 3), 0.3); // squash & stretch
+  stretchY = lerp(stretchY, Math.min(0.18, Math.abs(lookLY - prevLY) * 3), 0.3);
+  prevLX = lookLX; prevLY = lookLY;
+  cross = lerp(cross, crossTarget, 0.1);
+  const idleNow = !dizzy && now - lastActive > IDLE_MS;
+  idleTilt = lerp(idleTilt, idleNow ? lookLX * 7 : 0, 0.1);
+  updateBounce(now);
+  drawFrame(now);
+  requestAnimationFrame(loop);
+}
+
+// inputs standing in for touch / IMU / battery ADC
+window.addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect();
+  tiltX = clamp(((e.clientX - r.left) / r.width - 0.5) * 2, -1, 1);
+  tiltY = clamp(((e.clientY - r.top) / r.height - 0.5) * 2, -1, 1);
+  lastActive = performance.now();
+});
+document.documentElement.addEventListener('pointerleave', () => { tiltX = tiltY = 0; });
+window.addEventListener('pointerdown', e => { if (e.target.closest('.letter, .photos')) return; touching = true; touchStart = performance.now(); longPressFired = false; });
+window.addEventListener('pointerup', () => {
+  if (!touching) return;
+  touching = false;
+
+  cycleIdx = (cycleIdx + 1) % TAP_CYCLE.length;
+});
+requestAnimationFrame(loop);
+return {
+  lookAt(x, y) { tiltX = x; tiltY = y; lastActive = performance.now(); },
+  setStyle(name) { const i = TAP_CYCLE.indexOf(NAMES.indexOf(name)); if (i >= 0) cycleIdx = i; },
+};
+}
